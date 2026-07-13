@@ -1,0 +1,16 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    // Pure modules (src/scheduler, src/ai, src/data) use explicit .ts import
+    // extensions so Supabase Edge Functions (Deno) can share them verbatim.
+    "allowImportingTsExtensions": true,
+    "types": ["node"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["app", "src", "scripts", "index.ts", "App.tsx"],
+  "exclude": ["node_modules", "supabase/functions"]
+}
