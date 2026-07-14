@@ -4,7 +4,7 @@
 # ⚠️ REQUIRED: set project_id to YOUR project ref before the integration works.
 #    Find it in Dashboard → Project Settings → General → "Reference ID"
 #    (looks like: abcdefghijklmnopqrst). Replace the value below and commit.
-project_id = "REPLACE_WITH_YOUR_PROJECT_REF"
+project_id = "fufhymaxcxubcplzhhom"
 
 [api]
 enabled = true
