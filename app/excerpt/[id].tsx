@@ -25,7 +25,9 @@ import {
   type RecordingRow,
 } from '../../src/lib/db';
 import { useAsync, useSession } from '../../src/lib/hooks';
-import { fileTake, useTakeRecorder } from '../../src/lib/recorder';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+
+import { fileTake, signedRecordingUrl, useTakeRecorder } from '../../src/lib/recorder';
 import { supabase } from '../../src/lib/supabase';
 import { colors, radius, readinessMeta, spacing, type } from '../../src/theme';
 
@@ -158,16 +160,54 @@ export default function ExcerptCard() {
           <Dim>No takes yet. Every recording files itself here — no more unnamed voice memos.</Dim>
         ) : null}
         {recordings.map((r) => (
-          <View key={r.id} style={styles.take}>
-            <Text style={type.body}>Take {r.take_number}</Text>
-            <Dim>
-              {r.created_at.slice(0, 10)}
-              {r.duration_secs ? ` · ${r.duration_secs}s` : ''}
-            </Dim>
-          </View>
+          <TakeRow key={r.id} recording={r} />
         ))}
       </Card>
     </Screen>
+  );
+}
+
+function TakeRow({ recording }: { recording: RecordingRow }) {
+  const player = useAudioPlayer();
+  const status = useAudioPlayerStatus(player);
+  const [loading, setLoading] = useState(false);
+
+  async function toggle() {
+    try {
+      if (status.playing) {
+        player.pause();
+        return;
+      }
+      setLoading(true);
+      const url = await signedRecordingUrl(recording.file_url);
+      player.replace({ uri: url });
+      player.seekTo(0);
+      player.play();
+    } catch (e) {
+      Alert.alert('Playback', String((e as Error).message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <View style={styles.take}>
+      <Row style={{ justifyContent: 'space-between' }}>
+        <View>
+          <Text style={type.body}>Take {recording.take_number}</Text>
+          <Dim>
+            {recording.created_at.slice(0, 10)}
+            {recording.duration_secs ? ` · ${recording.duration_secs}s` : ''}
+          </Dim>
+        </View>
+        <Button
+          label={status.playing ? '❚❚ Pause' : '▶ Play'}
+          kind="secondary"
+          loading={loading}
+          onPress={toggle}
+        />
+      </Row>
+    </View>
   );
 }
 

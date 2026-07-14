@@ -1,0 +1,11 @@
+# Supabase project config. The GitHub integration reads this to know how to
+# apply migrations/ and deploy functions/ when you push.
+# Set project_id to your project ref (Dashboard → Settings → General).
+project_id = "advance"
+
+[db]
+major_version = 15
+
+[functions.ai]
+# The one edge function — the only place model calls happen.
+verify_jwt = true

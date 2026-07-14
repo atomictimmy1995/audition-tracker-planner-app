@@ -21,7 +21,15 @@ import {
 } from '../../src/components/ui';
 import { excerptDisplayName, type ExcerptRow, type PlannedSessionRow, type PracticePlanRow } from '../../src/lib/db';
 import { useAsync, useSession } from '../../src/lib/hooks';
-import { buildMinimumViableSession, generateAndStorePlan, buildPlanInputs, loadPlanContext } from '../../src/lib/planPipeline';
+import {
+  buildMinimumViableSession,
+  buildPlanInputs,
+  ensureSessionsWritten,
+  generateAndStorePlan,
+  loadPlanContext,
+  recentSkipCount,
+  replanAndStore,
+} from '../../src/lib/planPipeline';
 import { supabase } from '../../src/lib/supabase';
 import { colors, phaseMeta, spacing, type } from '../../src/theme';
 
@@ -66,6 +74,17 @@ export default function Plan() {
 
   useFocusEffect(useCallback(() => reload(), [reload]));
 
+  // Lazily write model content for the near horizon so weeks 3+ fill in as the
+  // user approaches them — cheap deltas, not one giant up-front generation.
+  useFocusEffect(
+    useCallback(() => {
+      if (!userId || !data?.plan) return;
+      ensureSessionsWritten(userId, todayISO()).then((n) => {
+        if (n > 0) reload();
+      });
+    }, [userId, data?.plan, reload]),
+  );
+
   const excerptById = new Map((data?.excerpts ?? []).map((e) => [e.id, e]));
   const nameOf = (id?: string) => {
     if (!id) return '';
@@ -98,6 +117,20 @@ export default function Plan() {
 
   async function logSession(s: PlannedSessionRow, status: 'completed' | 'partial' | 'skipped') {
     await supabase.from('planned_sessions').update({ status }).eq('id', s.id);
+
+    // Three misses → replan, don't guilt (spec §5.6). The engine rebalances
+    // and hands back plain-language, guilt-free copy; we just surface it.
+    if (status === 'skipped' && userId) {
+      const skips = await recentSkipCount(userId, todayISO());
+      if (skips >= 3) {
+        try {
+          const result = await replanAndStore(userId, todayISO());
+          Alert.alert('Plan adjusted', result.message);
+        } catch {
+          // Replan needs auditions + profile; if unavailable, leave the log as-is.
+        }
+      }
+    }
     reload();
   }
 

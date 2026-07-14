@@ -79,3 +79,16 @@ export async function fileTake(opts: {
 
   return { fileUrl: path, takeNumber };
 }
+
+/**
+ * Signed, time-limited URL for playing a stored take. The bucket is private
+ * (RLS keys paths by user id), so playback goes through a signed URL rather
+ * than a public link.
+ */
+export async function signedRecordingUrl(filePath: string, expiresInSecs = 3600): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from('recordings')
+    .createSignedUrl(filePath, expiresInSecs);
+  if (error || !data) throw error ?? new Error('Could not sign recording URL.');
+  return data.signedUrl;
+}

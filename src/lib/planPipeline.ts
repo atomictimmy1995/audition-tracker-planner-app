@@ -12,16 +12,20 @@
 import type { CanonicalizedItem } from '../ai/contracts.ts';
 import { generatePlan, type PlanInputs } from '../scheduler/engine.ts';
 import { addDays } from '../scheduler/dates.ts';
+import { replan } from '../scheduler/replan.ts';
 import type {
+  AdherenceEvent,
   AuditionInput,
   ExcerptInput,
   PlanOutput,
   PracticeProfileInput,
+  ReplanResult,
 } from '../scheduler/types.ts';
 import type {
   AuditionRow,
   ExcerptCardRow,
   ExcerptRow,
+  PlannedSessionRow,
   PracticeProfileRow,
   RepListItemRow,
 } from './db';
@@ -105,22 +109,19 @@ export function buildPlanInputs(ctx: LoadedPlanContext, today: string): PlanInpu
   return { auditions, excerpts, profile, options: { horizonStart: today } };
 }
 
+type WrittenSession = { session_id: string; blocks: { instructions: string }[]; coach_note: string };
+
 /**
- * Generate, enrich the first two weeks with model-written content, persist.
- * Later weeks keep deterministic labels and get written lazily — replans are
- * cheap deltas, not full regenerations (spec §5.6).
+ * Model pass C over a set of sessions. Returns instructions keyed by session
+ * date. Enrichment is always additive — on any failure the deterministic plan
+ * stands on its own, so callers never need to handle a throw.
  */
-export async function generateAndStorePlan(userId: string, today: string): Promise<PlanOutput> {
-  const ctx = await loadPlanContext(userId);
-  const inputs = buildPlanInputs(ctx, today);
-  if ('missing' in inputs) throw new Error(inputs.missing);
-
-  const plan = generatePlan(inputs);
-
-  // Model pass C on the near horizon only.
-  const enrichUntil = addDays(today, 14);
-  const nearSessions = plan.sessions.filter((s) => s.date <= enrichUntil);
-  let instructionsBySession = new Map<string, { blocks: { instructions: string }[]; coach_note: string }>();
+async function writeSessionContent(
+  ctx: LoadedPlanContext,
+  sessions: PlanOutput['sessions'],
+): Promise<Map<string, WrittenSession>> {
+  const out = new Map<string, WrittenSession>();
+  if (sessions.length === 0) return out;
   try {
     const { data, error } = await supabase.functions.invoke('ai', {
       body: {
@@ -131,7 +132,7 @@ export async function generateAndStorePlan(userId: string, today: string): Promi
             closingRitual: ctx.profile?.closing_ritual ?? undefined,
             timeOfDay: ctx.profile?.time_of_day ?? undefined,
           },
-          sessions: nearSessions.map((s) => ({
+          sessions: sessions.map((s) => ({
             sessionId: s.date,
             date: s.date,
             phase: s.phase,
@@ -147,16 +148,101 @@ export async function generateAndStorePlan(userId: string, today: string): Promi
       },
     });
     if (!error && data?.items) {
-      instructionsBySession = new Map(
-        (data.items as Array<{ session_id: string; blocks: { instructions: string }[]; coach_note: string }>).map(
-          (i) => [i.session_id, i],
-        ),
-      );
+      for (const i of data.items as WrittenSession[]) out.set(i.session_id, i);
     }
   } catch {
-    // Model enrichment is additive; the deterministic plan stands on its own.
+    // swallow — additive only
   }
+  return out;
+}
 
+/**
+ * Lazily write model content for the next stretch of unwritten sessions in the
+ * active plan (spec §5.6: cheap deltas, not full regenerations). Called when
+ * the user reaches near the end of the already-written horizon. No-op without a
+ * deployed edge function.
+ */
+export async function ensureSessionsWritten(
+  userId: string,
+  fromDate: string,
+  days = 14,
+): Promise<number> {
+  const ctx = await loadPlanContext(userId);
+  const { data: plan } = await supabase
+    .from('practice_plans')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .maybeSingle();
+  if (!plan) return 0;
+
+  const until = addDays(fromDate, days);
+  const { data: rows } = await supabase
+    .from('planned_sessions')
+    .select('*')
+    .eq('plan_id', plan.id)
+    .gte('date', fromDate)
+    .lte('date', until)
+    .order('date');
+
+  // Only sessions whose excerpt blocks still lack instructions.
+  const unwritten = (rows ?? []).filter((r: PlannedSessionRow) =>
+    r.blocks.some((b) => b.kind === 'excerpt' && !b.instructions),
+  );
+  if (unwritten.length === 0) return 0;
+
+  const written = await writeSessionContent(
+    ctx,
+    unwritten.map((r: PlannedSessionRow) => ({
+      date: r.date,
+      phase: r.phase as PlanOutput['sessions'][number]['phase'],
+      plannedMinutes: r.planned_minutes,
+      blocks: r.blocks as PlanOutput['sessions'][number]['blocks'],
+    })),
+  );
+  if (written.size === 0) return 0;
+
+  let updated = 0;
+  for (const r of unwritten as PlannedSessionRow[]) {
+    const w = written.get(r.date);
+    if (!w) continue;
+    const blocks = r.blocks.map((b, i) => ({ ...b, instructions: w.blocks?.[i]?.instructions ?? b.instructions }));
+    await supabase.from('planned_sessions').update({ blocks }).eq('id', r.id);
+    updated += 1;
+  }
+  return updated;
+}
+
+/**
+ * Generate, enrich the first two weeks with model-written content, persist.
+ * Later weeks keep deterministic labels and get written lazily by
+ * ensureSessionsWritten — replans are cheap deltas, not full regenerations.
+ */
+export async function generateAndStorePlan(userId: string, today: string): Promise<PlanOutput> {
+  const ctx = await loadPlanContext(userId);
+  const inputs = buildPlanInputs(ctx, today);
+  if ('missing' in inputs) throw new Error(inputs.missing);
+
+  const plan = generatePlan(inputs);
+
+  // Model pass C on the near horizon only.
+  const enrichUntil = addDays(today, 14);
+  const instructionsBySession = await writeSessionContent(
+    ctx,
+    plan.sessions.filter((s) => s.date <= enrichUntil),
+  );
+
+  await persistPlan(userId, today, plan, instructionsBySession);
+  return plan;
+}
+
+/** Supersede the active plan and write a fresh one + its sessions. */
+async function persistPlan(
+  userId: string,
+  today: string,
+  plan: PlanOutput,
+  instructionsBySession: Map<string, WrittenSession>,
+): Promise<void> {
   const { data: previous } = await supabase
     .from('practice_plans')
     .select('id, version')
@@ -197,6 +283,66 @@ export async function generateAndStorePlan(userId: string, today: string): Promi
   });
   const { error: sessionsError } = await supabase.from('planned_sessions').insert(rows);
   if (sessionsError) throw sessionsError;
+}
 
-  return plan;
+/**
+ * Adaptive replan (spec §5.6). Reads recent adherence, runs the tested,
+ * deterministic `replan()` (which rebalances and produces guilt-free copy),
+ * persists the new plan, and enriches its near horizon. Returns the structured
+ * result so the UI can show the plain-language message.
+ */
+export async function replanAndStore(userId: string, today: string): Promise<ReplanResult> {
+  const ctx = await loadPlanContext(userId);
+  const inputs = buildPlanInputs(ctx, today);
+  if ('missing' in inputs) throw new Error(inputs.missing);
+
+  // Pull adherence from the active plan's logged sessions.
+  const { data: active } = await supabase
+    .from('practice_plans')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .maybeSingle();
+  let adherence: AdherenceEvent[] = [];
+  if (active) {
+    const { data: logged } = await supabase
+      .from('planned_sessions')
+      .select('date, status, actual_minutes')
+      .eq('plan_id', active.id)
+      .neq('status', 'planned');
+    adherence = (logged ?? []).map((r: Pick<PlannedSessionRow, 'date' | 'status' | 'actual_minutes'>) => ({
+      date: r.date,
+      status: r.status as AdherenceEvent['status'],
+      actualMinutes: r.actual_minutes ?? undefined,
+    }));
+  }
+
+  const result = replan(inputs, adherence, today);
+  const enrichUntil = addDays(today, 14);
+  const written = await writeSessionContent(
+    ctx,
+    result.plan.sessions.filter((s) => s.date <= enrichUntil),
+  );
+  await persistPlan(userId, today, result.plan, written);
+  return result;
+}
+
+/** Count skipped sessions in the last `windowDays` — the replan trigger. */
+export async function recentSkipCount(userId: string, today: string, windowDays = 7): Promise<number> {
+  const from = addDays(today, -windowDays);
+  const { data: active } = await supabase
+    .from('practice_plans')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .maybeSingle();
+  if (!active) return 0;
+  const { count } = await supabase
+    .from('planned_sessions')
+    .select('id', { count: 'exact', head: true })
+    .eq('plan_id', active.id)
+    .eq('status', 'skipped')
+    .gte('date', from)
+    .lte('date', today);
+  return count ?? 0;
 }
