@@ -33,14 +33,33 @@ import { supabase } from './supabase';
 
 export { buildMinimumViableSession } from '../scheduler/engine.ts';
 
+/**
+ * Invoke the ai edge function, surfacing the server's own error text (e.g. the
+ * rate-limit message) instead of supabase-js's generic "non-2xx" string.
+ */
+async function invokeAi(body: Record<string, unknown>): Promise<{ items: unknown }> {
+  const { data, error } = await supabase.functions.invoke('ai', { body });
+  if (error) {
+    let message = error.message;
+    const ctx = (error as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+    if (ctx?.json) {
+      try {
+        const payload = await ctx.json();
+        if (payload?.error) message = payload.error;
+      } catch {
+        // keep the generic message
+      }
+    }
+    throw new Error(message);
+  }
+  return data as { items: unknown };
+}
+
 export async function canonicalizeRep(
   rawRepText: string,
   instrument = 'harp',
 ): Promise<CanonicalizedItem[]> {
-  const { data, error } = await supabase.functions.invoke('ai', {
-    body: { op: 'canonicalize', rawRepText, instrument },
-  });
-  if (error) throw error;
+  const data = await invokeAi({ op: 'canonicalize', rawRepText, instrument });
   return data.items as CanonicalizedItem[];
 }
 

@@ -31,6 +31,33 @@ import {
 const MODEL = 'claude-sonnet-5';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
+// Per-user, per-UTC-day cap on model calls — a hard ceiling on how much any one
+// signed-in user can spend against your Anthropic key. Override with the
+// AI_DAILY_LIMIT secret; 40 is generous for real use, tight against abuse.
+const DAILY_LIMIT = Number(Deno.env.get('AI_DAILY_LIMIT') ?? '40');
+
+class RateLimitError extends Error {}
+
+/**
+ * Atomically count this call against the user's daily budget (enforced in the
+ * DB via a SECURITY DEFINER function the user can't bypass). Throws
+ * RateLimitError when the cap is hit — call this immediately before callModel.
+ */
+async function enforceRateLimit(
+  supabase: ReturnType<typeof createClient>,
+): Promise<void> {
+  const { data, error } = await supabase.rpc('check_and_bump_ai_usage', {
+    p_limit: DAILY_LIMIT,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.allowed) {
+    throw new RateLimitError(
+      `You've reached today's limit of ${DAILY_LIMIT} AI actions. It resets at midnight UTC.`,
+    );
+  }
+}
+
 async function callModel(prompt: string, maxTokens: number): Promise<string> {
   const res = await fetch(ANTHROPIC_URL, {
     method: 'POST',
@@ -91,10 +118,12 @@ Deno.serve(async (req) => {
         aliases: r.aliases as string[],
       }));
 
-      // Deterministic pre-pass first; the model only sees the leftovers.
+      // Deterministic pre-pass first; the model only sees the leftovers. When
+      // everything matches locally there's no model call, so nothing to meter.
       const { matched, unmatched } = localCanonicalize(rawRepText, library);
       if (unmatched.length === 0) return json({ items: matched }, 200, cors);
 
+      await enforceRateLimit(supabase);
       const raw = await callModel(
         canonicalizePrompt({ instrument, rawRepText: unmatched.join('\n'), library }),
         4096,
@@ -105,6 +134,7 @@ Deno.serve(async (req) => {
 
     if (op === 'assess') {
       const input = AssessInput.parse(body.input);
+      await enforceRateLimit(supabase);
       const raw = await callModel(assessPrompt(input), 4096);
       return json({ items: parseModelJson(AssessOutput, raw) }, 200, cors);
     }
@@ -137,12 +167,16 @@ Deno.serve(async (req) => {
         commonFailureModes: k.common_failure_modes as string[],
       }));
 
+      await enforceRateLimit(supabase);
       const raw = await callModel(writeSessionsPrompt(input), 8192);
       return json({ items: parseModelJson(WriteSessionsOutput, raw) }, 200, cors);
     }
 
     return json({ error: `unknown op: ${op}` }, 400, cors);
   } catch (err) {
+    if (err instanceof RateLimitError) {
+      return json({ error: String(err.message), rateLimited: true }, 429, cors);
+    }
     return json({ error: String(err) }, 500, cors);
   }
 });

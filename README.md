@@ -76,9 +76,17 @@ Supabase won't re-run an already-applied migration).
 
 ### Or apply manually (no GitHub integration)
 
-Paste `supabase/migrations/20260713000000_init.sql` then
-`supabase/migrations/20260713010000_seed_harp_library.sql` into the SQL Editor,
-and `supabase functions deploy ai` from the CLI.
+Paste the migration files in `supabase/migrations/` into the SQL Editor in
+filename order, and `supabase functions deploy ai` from the CLI.
+
+### Cost guardrail
+
+Every model-backed call is metered per user, per UTC day, enforced in the DB
+by a `SECURITY DEFINER` function the user cannot bypass (see
+`20260713020000_ai_rate_limit.sql`). The default cap is 40 actions/user/day;
+override with the `AI_DAILY_LIMIT` secret. Combined with a prepaid,
+auto-reload-off Anthropic key, this bounds spend on both ends: no single user
+can run up calls, and the key itself can't be charged past its balance.
 
 ## Guardrails are code, not prompts (spec §8)
 
