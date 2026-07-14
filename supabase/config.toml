@@ -1,9 +1,8 @@
 # Supabase project config. The GitHub integration reads this to know how to
-# apply migrations/ and deploy functions/ when you push.
+# apply migrations/ and deploy functions/ when you push to the production branch.
 #
-# ⚠️ REQUIRED: set project_id to YOUR project ref before the integration works.
-#    Find it in Dashboard → Project Settings → General → "Reference ID"
-#    (looks like: abcdefghijklmnopqrst). Replace the value below and commit.
+# project_id is this project's Reference ID
+# (Dashboard → Project Settings → General).
 project_id = "fufhymaxcxubcplzhhom"
 
 [api]
