@@ -1,11 +1,27 @@
 # Supabase project config. The GitHub integration reads this to know how to
 # apply migrations/ and deploy functions/ when you push.
-# Set project_id to your project ref (Dashboard → Settings → General).
-project_id = "advance"
+#
+# ⚠️ REQUIRED: set project_id to YOUR project ref before the integration works.
+#    Find it in Dashboard → Project Settings → General → "Reference ID"
+#    (looks like: abcdefghijklmnopqrst). Replace the value below and commit.
+project_id = "REPLACE_WITH_YOUR_PROJECT_REF"
+
+[api]
+enabled = true
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
 
 [db]
+# Match your project's Postgres major version (Dashboard → Settings → Database).
 major_version = 15
 
+[db.seed]
+# seed.sql runs only on local dev / preview branches, never production. The
+# canonical library ships as a migration instead, so nothing to seed here.
+enabled = false
+
 [functions.ai]
-# The one edge function — the only place model calls happen.
+# The one edge function — the only place model calls happen. It authenticates
+# the caller (verify_jwt) and reads ANTHROPIC_API_KEY from a secret you set with
+# `supabase secrets set ANTHROPIC_API_KEY=...` (never committed).
 verify_jwt = true

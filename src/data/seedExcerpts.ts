@@ -2,7 +2,7 @@
  * Canonical harp excerpt library — seed data.
  *
  * This is the "pick from library" source in-app and the input to
- * scripts/generate-seed-sql.ts, which emits supabase/seed.sql.
+ * scripts/generate-seed-sql.ts, which emits the canonical-library migration.
  *
  * Knowledge entries (the RAG corpus, spec §5.4) are hand-curated for the
  * core audition list first; remaining excerpts get entries before launch.

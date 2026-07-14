@@ -1,4 +1,4 @@
-/** Row types mirroring supabase/migrations/0001_init.sql. */
+/** Row types mirroring supabase/migrations/20260713000000_init.sql. */
 
 import type { Phase, Readiness } from '../scheduler/types.ts';
 

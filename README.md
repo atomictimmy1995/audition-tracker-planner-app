@@ -30,8 +30,8 @@ Practice profile (6 tapped questions) ──────────────
 |---|---|---|
 | `src/scheduler/` | pure TS, zero deps | Phases, rotation (smooth weighted round-robin), guardrails, overlap, replan. **48 unit tests, no LLM anywhere.** |
 | `src/ai/` | pure TS | Zod contracts for the 3 model calls, prompt builders, deterministic canonicalize pre-pass. Unit-tested. |
-| `src/data/seedExcerpts.ts` | pure TS | 63 canonical harp excerpts + 15 curated knowledge entries (the RAG moat, spec §5.4). Source of truth for `supabase/seed.sql`. |
-| `supabase/` | SQL + Deno | Full schema with RLS (`migrations/`), generated seed, and the `ai` edge function — the only place model calls happen. |
+| `src/data/seedExcerpts.ts` | pure TS | 63 canonical harp excerpts + 15 curated knowledge entries (the RAG moat, spec §5.4). Source of truth for the generated library migration. |
+| `supabase/` | SQL + Deno | Full schema with RLS + the generated library, both in `migrations/`, plus the `ai` edge function — the only place model calls happen. `config.toml` drives the GitHub integration. |
 | `app/` | Expo Router | Screens: dashboard, audition pipeline, portfolio, plan, rep entry + canonicalization confirm, overlap payoff, profile elicitation, recorder, mock audition mode. |
 
 The pure modules use explicit `.ts` import extensions so the Deno edge function imports the *same* prompt builders and contracts the tests cover.
@@ -44,12 +44,41 @@ npm test                 # scheduler + AI contract tests (no network, no keys)
 npm run typecheck
 ```
 
-Run the app against a Supabase project:
+### Deploy the backend via the GitHub integration (recommended)
 
-1. Create a project, then apply `supabase/migrations/0001_init.sql` and `supabase/seed.sql` (regenerate the latter anytime with `npm run seed:sql`).
-2. `cp .env.example .env` and fill in the project URL + anon key.
-3. Deploy the model proxy: `supabase functions deploy ai` and `supabase secrets set ANTHROPIC_API_KEY=...`. The app works without it — plans fall back to deterministic labels; rep entry falls back to exact library matching.
-4. `npx expo start`
+The repo is structured for Supabase's GitHub integration: everything under
+`supabase/migrations/` is applied to your database on push, and `functions/`
+is deployed automatically.
+
+1. **Link the repo** in the Supabase Dashboard → Integrations → GitHub, pointing
+   at this repo and your production branch.
+2. **Set your project ref** in `supabase/config.toml` (`project_id` — from
+   Dashboard → Project Settings → General → Reference ID) and commit it.
+3. **Push.** The integration runs both migrations in order:
+   `20260713000000_init.sql` (schema + RLS + storage bucket) then
+   `20260713010000_seed_harp_library.sql` (63 excerpts + knowledge). It also
+   deploys the `ai` edge function.
+4. **Set the model secret** (not in the repo):
+   `supabase secrets set ANTHROPIC_API_KEY=...`. The app runs without it — plans
+   fall back to deterministic labels; rep entry falls back to exact matching.
+
+The canonical library ships as a **migration**, not `seed.sql`, because the
+GitHub integration only runs migrations against production. Regenerate it after
+editing `src/data/seedExcerpts.ts` with `npm run seed:sql` (bump the version
+constant in `scripts/generate-seed-sql.ts` for changes after the first deploy —
+Supabase won't re-run an already-applied migration).
+
+### Point the app at the project
+
+1. `cp .env.example .env` and fill in the project URL + anon key
+   (Dashboard → Settings → API).
+2. `npx expo start`
+
+### Or apply manually (no GitHub integration)
+
+Paste `supabase/migrations/20260713000000_init.sql` then
+`supabase/migrations/20260713010000_seed_harp_library.sql` into the SQL Editor,
+and `supabase functions deploy ai` from the CLI.
 
 ## Guardrails are code, not prompts (spec §8)
 
