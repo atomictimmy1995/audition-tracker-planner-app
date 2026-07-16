@@ -11,6 +11,9 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["app", "src", "scripts", "index.ts", "App.tsx"],
-  "exclude": ["node_modules", "supabase/functions"]
+  // _shared holds runtime-agnostic AI code shared by the app and the Deno edge
+  // function; type-check it. Only the Deno entrypoint (ai/index.ts) is excluded
+  // — it uses Deno globals and npm: specifiers tsc can't resolve.
+  "include": ["app", "src", "scripts", "index.ts", "App.tsx", "supabase/functions/_shared"],
+  "exclude": ["node_modules", "supabase/functions/ai"]
 }

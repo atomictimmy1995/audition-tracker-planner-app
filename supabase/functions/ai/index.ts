@@ -20,13 +20,13 @@ import {
   WriteSessionsInput,
   WriteSessionsOutput,
   parseModelJson,
-} from '../../../src/ai/contracts.ts';
-import { localCanonicalize } from '../../../src/ai/localCanonicalize.ts';
+} from '../_shared/contracts.ts';
+import { localCanonicalize } from '../_shared/localCanonicalize.ts';
 import {
   assessPrompt,
   canonicalizePrompt,
   writeSessionsPrompt,
-} from '../../../src/ai/prompts.ts';
+} from '../_shared/prompts.ts';
 
 const MODEL = 'claude-sonnet-5';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';

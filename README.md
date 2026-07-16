@@ -29,7 +29,7 @@ Practice profile (6 tapped questions) ──────────────
 | Layer | Where | Notes |
 |---|---|---|
 | `src/scheduler/` | pure TS, zero deps | Phases, rotation (smooth weighted round-robin), guardrails, overlap, replan. **48 unit tests, no LLM anywhere.** |
-| `src/ai/` | pure TS | Zod contracts for the 3 model calls, prompt builders, deterministic canonicalize pre-pass. Unit-tested. |
+| `supabase/functions/_shared/` | pure TS | Zod contracts for the 3 model calls, prompt builders, deterministic canonicalize pre-pass. Shared verbatim by the app and the Deno edge function (one source of truth); unit-tested from `src/ai/__tests__/`. |
 | `src/data/seedExcerpts.ts` | pure TS | 63 canonical harp excerpts + 15 curated knowledge entries (the RAG moat, spec §5.4). Source of truth for the generated library migration. |
 | `supabase/` | SQL + Deno | Full schema with RLS + the generated library, both in `migrations/`, plus the `ai` edge function — the only place model calls happen. `config.toml` drives the GitHub integration. |
 | `app/` | Expo Router | Screens: dashboard, audition pipeline, portfolio, plan, rep entry + canonicalization confirm, overlap payoff, profile elicitation, recorder, mock audition mode. |

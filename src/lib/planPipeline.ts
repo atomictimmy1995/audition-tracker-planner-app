@@ -9,7 +9,7 @@
  * nothing to hide server-side. Only model calls cross the network.
  */
 
-import type { CanonicalizedItem } from '../ai/contracts.ts';
+import type { CanonicalizedItem } from '../../supabase/functions/_shared/contracts.ts';
 import { generatePlan, type PlanInputs } from '../scheduler/engine.ts';
 import { addDays } from '../scheduler/dates.ts';
 import { replan } from '../scheduler/replan.ts';

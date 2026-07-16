@@ -24,3 +24,5 @@ enabled = false
 # the caller (verify_jwt) and reads ANTHROPIC_API_KEY from a secret you set with
 # `supabase secrets set ANTHROPIC_API_KEY=...` (never committed).
 verify_jwt = true
+# Lets Deno resolve the bare `zod` import shared with the app.
+import_map = "./functions/import_map.json"

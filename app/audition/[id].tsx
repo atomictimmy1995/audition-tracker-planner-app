@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { CANONICALIZE_CONFIDENCE_THRESHOLD, type CanonicalizedItem } from '../../src/ai/contracts.ts';
+import { CANONICALIZE_CONFIDENCE_THRESHOLD, type CanonicalizedItem } from '../../supabase/functions/_shared/contracts.ts';
 import {
   Button,
   Card,

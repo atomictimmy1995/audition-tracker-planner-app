@@ -6,9 +6,9 @@ import {
   CANONICALIZE_CONFIDENCE_THRESHOLD,
   CanonicalizeOutput,
   parseModelJson,
-} from '../contracts.ts';
-import { localCanonicalize, normalize, splitRepList } from '../localCanonicalize.ts';
-import { assessPrompt, canonicalizePrompt, writeSessionsPrompt } from '../prompts.ts';
+} from '../../../supabase/functions/_shared/contracts.ts';
+import { localCanonicalize, normalize, splitRepList } from '../../../supabase/functions/_shared/localCanonicalize.ts';
+import { assessPrompt, canonicalizePrompt, writeSessionsPrompt } from '../../../supabase/functions/_shared/prompts.ts';
 
 const LIBRARY = SEED_EXCERPTS.map((e) => ({
   excerptId: e.slug,
